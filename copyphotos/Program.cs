@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -12,21 +14,20 @@ namespace copyphotos
     {
         public static string localPathRoot;
         public static string [] fileExtensions;
+        public static string[] excludeCopyList;
+        public static string[] excludeDeleteList;
         public static List<string> phoneFileList = new List<string>();
         public static DateTime programStartTime;
+
 
         static void Main()
         {
             Console.Title = "Copy Photos v1.0 by Wiktor Kasz(c) 2020";
             programStartTime = DateTime.Now;
-            try
-            {
+
                 ReadConfigFiles();
                 CopyFromPhone();
                 CopyFromRemovableStorage();
-            }
-            catch(Exception ex)
-            { Console.WriteLine("Error! " + ex.Message.ToString()); }
 
             Thread.Sleep(500);
             Console.WriteLine("Closing in 3 seconds...");
@@ -184,39 +185,80 @@ namespace copyphotos
                         Thread.Sleep(1000);
                         try
                         {
-                            
-                            foreach (var drive in device.GetDrives())
+                            if (device.GetDrives().Length > 0)
                             {
-                                
-                                Console.WriteLine("Found drive: " + drive.Name);
-                                Thread.Sleep(1000);
-                                foreach (var dir in device.GetDirectories(drive.Name, "*.*", SearchOption.AllDirectories))
+                                foreach (var drive in device.GetDrives())
                                 {
-                                    if (!dir.ToLower().Contains(@"android\data"))
+
+
+
+                                    Console.WriteLine("Found drive: " + drive.Name);
+                                    Thread.Sleep(1000);
+
+                                    foreach (var file in device.EnumerateFiles(drive.Name))
                                     {
-                                        Console.WriteLine("Found directory:    " + dir.Substring(dir.IndexOf(drive.Name) + drive.Name.Length, dir.Length - (dir.IndexOf(drive.Name) + drive.Name.Length)));
-                                        Thread.Sleep(50);
-                                        foreach (var file in device.EnumerateFiles(dir))
+                                        for (int i = 0; i < fileExtensions.Length; i++)
                                         {
-                                            for (int i = 0; i < fileExtensions.Length; i++)
+                                            if (file.ToLower().EndsWith(fileExtensions[i]))
                                             {
-                                                if (file.ToLower().EndsWith(fileExtensions[i]))
+                                                phoneFileList.Add(file);
+                                            }
+                                        }
+                                    }
+
+
+                                    foreach (var dir in device.GetDirectories(drive.Name, "*.*", SearchOption.AllDirectories))
+                                    {
+                                        bool exclude = false;
+
+                                        foreach (string direxception in excludeCopyList)
+                                        {
+                                            if (dir.ToLower().IndexOf(direxception.ToLower()) > -1)
+                                            {
+                                                exclude = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if (!exclude)
+                                        {
+                                            Console.WriteLine("Found directory: " + dir.Substring(dir.IndexOf(drive.Name) + drive.Name.Length, dir.Length - (dir.IndexOf(drive.Name) + drive.Name.Length)));
+                                            Thread.Sleep(50);
+                                            foreach (var file in device.EnumerateFiles(dir))
+                                            {
+                                                for (int i = 0; i < fileExtensions.Length; i++)
                                                 {
-                                                    phoneFileList.Add(file);
+                                                    if (file.ToLower().EndsWith(fileExtensions[i]))
+                                                    {
+                                                        phoneFileList.Add(file);
+                                                    }
                                                 }
                                             }
+                                        }
+                                        else
+                                        {
+                                            //Console.WriteLine("Skipping directory: " + dir.Substring(dir.IndexOf(drive.Name) + drive.Name.Length, dir.Length - (dir.IndexOf(drive.Name) + drive.Name.Length)));
+                                            //Thread.Sleep(50);
                                         }
                                     }
                                 }
                             }
+                            else
+                            {
+                                Console.WriteLine("No drives found for device " + device.FriendlyName + "!");
+                                Thread.Sleep(1000);
+                            }
                         }
                         catch
-                        { Console.WriteLine("Error connecting to: " + device.FriendlyName); }
+                        { Console.WriteLine("Error connecting to: " + device.FriendlyName);
+                            Thread.Sleep(1000);
+                        }
                         devicecounter++;
                     }
                     else
                     {
                         Console.WriteLine("Error connecting to: " + device.FriendlyName);
+                        Thread.Sleep(1000);
                     }
                 }
 
@@ -225,7 +267,7 @@ namespace copyphotos
                 {
                     Console.WriteLine("Found " + phoneFileList.Count + " files on device " + device.FriendlyName);
 
-                    string dirlocal = Path.Combine(localPathRoot, device.FriendlyName);
+                    string dirlocal = Path.Combine(localPathRoot, device.Model + " " +device.FriendlyName);
 
                     if (!Directory.Exists(dirlocal))
                     {
@@ -254,8 +296,24 @@ namespace copyphotos
                         }
                         */
 
-                        string newlocaldirecotry = Path.Combine(dirlocal, new DirectoryInfo(file).Parent.Name);
-  
+                        DateTime startFile = DateTime.Now;
+                        string newlocaldirecotry = "";
+
+                        if (new DirectoryInfo(file).Parent.Name == "Phone" || new DirectoryInfo(file).Parent.Name == "Card")
+                        {
+                            newlocaldirecotry = dirlocal;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                newlocaldirecotry = Path.Combine(dirlocal, new DirectoryInfo(file).Parent.Name);
+                            }
+                            catch
+                            { newlocaldirecotry = dirlocal; }
+                        }
+                        
+                        
                         if (!Directory.Exists(newlocaldirecotry))
                         {
                             Directory.CreateDirectory(newlocaldirecotry);
@@ -273,8 +331,9 @@ namespace copyphotos
                                 copiedfilescounter++;
                                 DateTime stop = DateTime.Now;
 
-                                double duration = (stop - start).TotalSeconds;
-                                Console.WriteLine("[" + copiedfilescounter + "/" + phoneFileList.Count + "]" + " Avg Speed: " + Math.Round((copiedfilessize / copiedfilescounter / duration) / 1024 / 1024, 2) + " MB/s" + " Size " + size / 1024 + "kB" + " Copied file: " + Path.GetFileName(file) + " in " + duration + "s");
+                                double totalduration = (stop - start).TotalSeconds;
+                                double duration = (stop - startFile).TotalSeconds;
+                                Console.WriteLine("[" + copiedfilescounter + "/" + phoneFileList.Count + "]" + " Avg Speed: " + Math.Round((copiedfilessize / copiedfilescounter / totalduration) / 1024 / 1024, 2) + " MB/s" + " Size " + size / 1024 + "kB" + " Copied:" + file + " in " + Math.Round(duration,2) + "s" + " Elapsed: " + Convert.ToInt16(totalduration) + "s");
                             }
                         }
                     }
@@ -288,7 +347,7 @@ namespace copyphotos
                 {
                     Console.WriteLine("Copied " + copiedfilescounter + " files " + copiedfilessize / 1024 / 1024 + "MB" + " from the phone");
 
-                    Console.Write("Delete all files on the phone except for ringtones? Type Yes to delete, press Enter to continue: ");
+                    Console.Write("Delete all files on the phone except for folder defined in excludedelete.txt? Type Yes to delete, press Enter to continue: ");
                     string yn = Console.ReadLine();
                     if (yn.ToLower() == "yes")
                     {
@@ -324,18 +383,41 @@ namespace copyphotos
                             foreach (var drive in device.GetDrives())
                             {
 
+
                                 foreach (var dir in device.GetDirectories(drive.Name, "*.*", SearchOption.TopDirectoryOnly))
                                 {
-                                    if (!dir.ToLower().Contains("ringtones") && !dir.ToLower().Contains("notifications"))
+                                    bool exclude = false;
+                                    foreach (string direxception in excludeDeleteList)
+                                    {
+                                        if (dir.ToLower().IndexOf(direxception.ToLower()) > -1)
+                                        {
+                                            exclude = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (!exclude)
                                     {
                                         Console.WriteLine("Deleting folder " + dir);
                                         device.DeleteDirectory(dir, true);
                                         filesdeletedcounter++;
                                     }
+                                    else
+                                    {
+                                        Console.WriteLine("Skipping deletion of directory: " + dir);
+                                        Thread.Sleep(50);
+                                    }
+
+
+                                    foreach (var file in device.EnumerateFiles(drive.Name))
+                                    {
+                                        device.DeleteFile(file);
+                                    }
                                 }
                             }
                         }
-                        catch(Exception ex) { Console.WriteLine(ex.Message.ToString());}
+
+                        catch (Exception ex) { Console.WriteLine(ex.Message.ToString()); }
                     }
                 }
             }
@@ -376,10 +458,23 @@ namespace copyphotos
                 Thread.Sleep(1000);
 
             }
+
+            if (!File.Exists("excludecopy.txt"))
+            {
+                File.WriteAllText("excludecopy.txt", "yanosik android");
+            }
+
+            if (!File.Exists("excludedelete.txt"))
+            {
+                File.WriteAllText("excludedelete.txt", "ringtones notifications");
+            }
+
             localPathRoot = File.ReadAllText("path.txt");
             fileExtensions = File.ReadAllText("extensions.txt").Split(' ');
+            excludeCopyList = File.ReadAllText("excludecopy.txt").Split(' ');
+            excludeDeleteList = File.ReadAllText("excludedelete.txt").Split(' ');
 
-            if(string.IsNullOrWhiteSpace(localPathRoot))
+            if (string.IsNullOrWhiteSpace(localPathRoot))
             {
                 Console.WriteLine("path.txt cannot be empty!");
                 Console.WriteLine(@"Please set up your local save directory root by typing it in the path.txt file - example: D:\Pictures\");
