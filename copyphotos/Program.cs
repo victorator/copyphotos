@@ -189,9 +189,6 @@ namespace copyphotos
                             {
                                 foreach (var drive in device.GetDrives())
                                 {
-
-
-
                                     Console.WriteLine("Found drive: " + drive.Name);
                                     Thread.Sleep(1000);
 
@@ -205,7 +202,6 @@ namespace copyphotos
                                             }
                                         }
                                     }
-
 
                                     foreach (var dir in device.GetDirectories(drive.Name, "*.*", SearchOption.AllDirectories))
                                     {
@@ -253,6 +249,7 @@ namespace copyphotos
                         { Console.WriteLine("Error connecting to: " + device.FriendlyName);
                             Thread.Sleep(1000);
                         }
+
                         devicecounter++;
                     }
                     else
@@ -346,18 +343,38 @@ namespace copyphotos
                 if (copiedfilescounter > 0)
                 {
                     Console.WriteLine("Copied " + copiedfilescounter + " files " + copiedfilessize / 1024 / 1024 + "MB" + " from the phone");
-
-                    Console.Write("Delete all files on the phone except for folder defined in excludedelete.txt? Type Yes to delete, press Enter to continue: ");
-                    string yn = Console.ReadLine();
-                    if (yn.ToLower() == "yes")
-                    {
-                        DeletePhoneFiles();
-                    }
+                    Thread.Sleep(2000);
                 }
                 else
                 {
                     Console.WriteLine("No files copied");
                     Thread.Sleep(2000);
+                }
+
+                int seconds = 1;
+                Console.Write("Delete all files on the phone except for folders defined in excludedelete.txt?\n Press Y to delete or wait 3 seconds to skip ");
+
+                while (true)
+                {
+                    if (Console.KeyAvailable)
+                    {
+                        ConsoleKeyInfo c = Console.ReadKey(true);
+                        if (c.Key == ConsoleKey.Y)
+                        {
+                            DeletePhoneFiles();
+                            break;
+                        }
+                    }
+
+                    System.Threading.Thread.Sleep(1000);
+
+                    if (seconds++ > 3)
+                    {
+                        Console.WriteLine("Skipping Deleting of folders.");
+                        break;
+                    }
+
+                    Console.Write('.');
                 }
             }
             else
